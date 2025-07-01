@@ -11,7 +11,6 @@ class data_sampler_CFRL(object):
         self.task_length = self.config.task_length
         self.unused_tokens = ['[unused0]', '[unused1]', '[unused2]', '[unused3]']
         
-        # --- THAY ĐỔI CỐT LÕI: TẢI TOKENIZER ---
         if self.config.model == 'qwen':
             model_path = self.config.model_name
             print(f"Đang tải Qwen tokenizer từ: {model_path}")
@@ -25,15 +24,13 @@ class data_sampler_CFRL(object):
             if self.tokenizer.pad_token is None:
                 self.tokenizer.pad_token = self.tokenizer.eos_token
             
-            # Qwen không có mask token như BERT, ta có thể dùng một token đặc biệt khác
-            # eos_token là một lựa chọn an toàn
+            # Qwen không có mask token như BERT, eos_token 
             if self.tokenizer.mask_token is None:
                 self.tokenizer.add_special_tokens({'mask_token': '[MASK]'})
                 print("Đã thêm token [MASK] vào tokenizer.")
             self.mask_token = self.tokenizer.mask_token
             
         elif self.config.model in ['bert', 'roberta']:
-            # Giữ lại logic cũ cho BERT/RoBERTa nếu cần
             model_path = self.config.bert_path if self.config.model == 'bert' else self.config.roberta_path
             self.mask_token = '[MASK]' if self.config.model == 'bert' else '<mask>'
             self.tokenizer = AutoTokenizer.from_pretrained(
@@ -43,7 +40,6 @@ class data_sampler_CFRL(object):
         else:
             raise ValueError(f"Model '{self.config.model}' không được hỗ trợ trong sampler.")
 
-        # --- Lấy ID của các token đặc biệt (một cách tổng quát) ---
         self.config.vocab_size = len(self.tokenizer)
         self.config.sep_token_ids = self.tokenizer.sep_token_id
         self.config.mask_token_ids = self.tokenizer.mask_token_id
@@ -63,12 +59,10 @@ class data_sampler_CFRL(object):
         self.rel2des, self.id2des = self._read_descriptions(self.config.relation_description)
         self.config.num_of_relation = len(self.id2rel)
 
-        # read data (sẽ được xử lý lại nếu cache không khớp)
         self.training_data = self._read_data(self.config.training_data, self._temp_datapath('train'))
         self.valid_data = self._read_data(self.config.valid_data, self._temp_datapath('valid'))
         self.test_data = self._read_data(self.config.test_data, self._temp_datapath('test'))
 
-        # ... Phần còn lại của __init__ giữ nguyên ...
         rel_index = np.load(self.config.rel_index)
         rel_cluster_label = np.load(self.config.rel_cluster_label)
         self.cluster_to_labels = {}
@@ -98,7 +92,6 @@ class data_sampler_CFRL(object):
         file_name = f'{data_type}.pkl'
         prompt_len = self.config.prompt_len * self.config.prompt_num
 
-        # THAY ĐỔI: Thêm 'qwen' vào tên thư mục cache
         if self.config.model == 'bert':
             model_process_name = '_process_BERT_'
         elif self.config.model == 'roberta':
@@ -126,8 +119,6 @@ class data_sampler_CFRL(object):
         save_data_path = os.path.join(mid_dir, file_name)   
         return save_data_path
 
-    # --- CÁC HÀM CÒN LẠI GẦN NHƯ GIỮ NGUYÊN ---
-    # Logic của chúng phụ thuộc vào self.tokenizer đã được khởi tạo đúng cách ở trên.
     
     def set_seed(self, seed):
         self.seed = seed
@@ -205,7 +196,6 @@ class data_sampler_CFRL(object):
             'index': sample['index']
         }
         
-        # Logic chọn phương thức tokenize không thay đổi
         if self.config.pattern == 'hardprompt':
             ids, mask = self._tokenize_hardprompt(sample)
         elif self.config.pattern == 'softprompt':
