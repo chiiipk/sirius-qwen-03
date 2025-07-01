@@ -18,7 +18,9 @@ class EncodingModel(nn.Module):
                 self.config.model_name,
                 torch_dtype=torch.bfloat16,
                 device_map="auto",
-                trust_remote_code=True # Cần thiết cho một số model mới
+                trust_remote_code=True
+                attn_implementation="eager" # Buộc dùng attention gốc, không dùng flash-attn
+# Cần thiết cho một số model mới
             )
             # Lấy chiều ẩn (embedding dimension) từ cấu hình của model
             self.embedding_dim = self.encoder.config.hidden_size
