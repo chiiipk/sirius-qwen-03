@@ -36,7 +36,7 @@ class Moment:
                     instance[k] = instance[k].to(self.config.device)
                 hidden = encoder(instance)
                 fea = hidden.detach().cpu().data
-                fea = hidden.detach().cpu().float() # Chuyển sang float32
+                fea = hidden.detach().cpu().float() 
                 self.update(ind, fea)
                 lbs.append(labels) # shuffle=False
                 lbs.append(labels)
@@ -54,7 +54,7 @@ class Moment:
                 hidden = encoder(instance)
                 fea = hidden.detach().cpu().data
                 # VÀ SỬA Ở ĐÂY:
-                fea = hidden.detach().cpu().float() # Chuyển sang float32
+                fea = hidden.detach().cpu().float() 
                 self.update(ind, fea, is_memory)
                 lbs.append(labels) # shuffle=False
                 lbs.append(labels)
