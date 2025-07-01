@@ -60,7 +60,7 @@ class Manager(object):
             for k in instance.keys():
                 instance[k] = instance[k].to(self.config.device)
             hidden = encoder(instance)
-            fea = hidden.detach().cpu().data # (1, H)
+            fea = hidden.detach().cpu().float() # (1, H) - Chuyển sang float32 # (1, H)
             features.append(fea)
         features = torch.cat(features, dim=0) # (M, H)
         proto = features.mean(0)
@@ -79,7 +79,7 @@ class Manager(object):
             for k in instance.keys():
                 instance[k] = instance[k].to(self.config.device)
             hidden = encoder(instance)
-            fea = hidden.detach().cpu().data # (1, H)
+            fea = hidden.detach().cpu().float() # (1, H) - Chuyển sang float32
             features.append(fea)
 
         features = np.concatenate(features) # tensor-->numpy array; (N, H)
