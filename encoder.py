@@ -18,7 +18,7 @@ class EncodingModel(nn.Module):
                 self.config.model_name,
                 torch_dtype=torch.bfloat16,
                 device_map="auto",
-                trust_remote_code=True
+                trust_remote_code=True,
                 attn_implementation="eager" # Buộc dùng attention gốc, không dùng flash-attn
 # Cần thiết cho một số model mới
             )
