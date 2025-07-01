@@ -4,7 +4,6 @@ import random
 import time
 import numpy as np
 import torch.nn.functional as F
-# THAY ĐỔI: Sử dụng data_loader tổng quát
 from data_loader import get_data_loader
 from nltk import word_tokenize
 from retry import retry
@@ -23,7 +22,6 @@ class Moment:
         self.temperature = config.contrastive_temp
         self.m = config.margin
 
-# Bên trong file utils.py
 
     def init_moment(self, encoder, dataset, is_memory=False):
         encoder.eval()
@@ -31,7 +29,6 @@ class Moment:
         if not is_memory:
             self.features = torch.zeros(datalen, self.config.encoder_output_size)
             self.features_des = torch.zeros(datalen, self.config.encoder_output_size)
-            # THAY ĐỔI: Sử dụng data_loader tổng quát
             data_loader = get_data_loader(self.config, dataset) # shuffle=False
             lbs = []
             for step, (instance, labels, ind) in enumerate(data_loader):
@@ -39,7 +36,6 @@ class Moment:
                     instance[k] = instance[k].to(self.config.device)
                 hidden = encoder(instance)
                 fea = hidden.detach().cpu().data
-                # SỬA Ở ĐÂY:
                 fea = hidden.detach().cpu().float() # Chuyển sang float32
                 self.update(ind, fea)
                 lbs.append(labels) # shuffle=False
@@ -50,7 +46,6 @@ class Moment:
             self.mem_samples = dataset
             self.mem_features = torch.zeros(datalen, self.config.encoder_output_size)
             self.mem_features_des = torch.zeros(datalen, self.config.encoder_output_size)
-            # THAY ĐỔI: Sử dụng data_loader tổng quát
             data_loader = get_data_loader(self.config, dataset) # shuffle=False
             lbs = []
             for step, (instance, labels, ind) in enumerate(data_loader):
@@ -82,7 +77,6 @@ class Moment:
             self.mem_features_des[ind] = feature_des
 
     def update_allmem(self, encoder):
-        # THAY ĐỔI: Sử dụng data_loader tổng quát
         data_loader = get_data_loader(self.config, self.mem_samples, batch_size=64) # shuffle=False
         for step, (instance, labels, ind) in enumerate(data_loader):
             for k in instance.keys():
@@ -91,8 +85,6 @@ class Moment:
             fea = hidden.detach().cpu().data
             self.update(ind, fea, is_memory=True)
 
-    # --- CÁC HÀM CÒN LẠI GIỮ NGUYÊN ---
-    # (Các hàm loss và GPT không cần thay đổi)
 
     def get_mem_proto(self):
         cinds = []
@@ -109,20 +101,16 @@ class Moment:
         return centroids
 
     # MCL loss
-    # Bên trong class Moment của file utils.py
 
     def contrastive_loss(self, x, labels, is_memory=False, des=None, relation_2_cluster=None):
         '''
         x (B, H)
         '''
-        # --- THAY ĐỔI BẮT ĐẦU TỪ ĐÂY ---
-        # 1. Chuyển đổi kiểu dữ liệu của các tensor đầu vào sang float32
         x = x.float()
         if des is not None:
             des = des.float()
     
         if is_memory:
-            # 2. Chuyển đổi kiểu dữ liệu của các tensor lấy từ bộ nhớ sang float32
             ct_x = self.mem_features.to(self.config.device).float()
             ct_x_des = self.mem_features_des.to(self.config.device).float()
             ct_y = self.mem_labels
@@ -132,14 +120,11 @@ class Moment:
                 sample_id = random.sample(idx, self.sample_k)
             else:
                 sample_id = idx
-            # 3. Chuyển đổi kiểu dữ liệu của các tensor lấy từ bộ nhớ sang float32
             ct_x = self.features[sample_id].to(self.config.device).float()
             ct_x_des = self.features_des[sample_id].to(self.config.device).float()
             ct_y = self.labels[sample_id]
     
-        # --- KẾT THÚC THAY ĐỔI ---
     
-        # Bây giờ tất cả các tensor đều là float32, các phép toán sẽ hoạt động chính xác
         # l2 normalize
         x = F.normalize(x, p=2, dim=1)
         ct_x = F.normalize(ct_x, p=2, dim=1)
@@ -227,8 +212,6 @@ class Moment:
         loss = 1.0 - cos_sim
         return loss.mean()
 
-    # ... các hàm còn lại giữ nguyên ...
-# ... (Các hàm liên quan đến GPT và parsing giữ nguyên) ...
 
 
 
