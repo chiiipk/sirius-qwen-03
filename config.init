@@ -1,0 +1,62 @@
+[GPT]
+gpt_temp = 0.0
+key = your_openAI_api_key
+
+[task]
+seed = 100
+device = cuda
+task_name = FewRel
+;FewRel, Tacred
+
+[continual]
+num_k = 5
+; num_k = 5-shot, 10-shot
+pattern = hybridprompt
+; pattern = marker,hardprompt,softprompt,cls,hybridprompt
+total_round = 6
+task_length = 8
+memory_size = 1
+
+[datageneration]
+gen = 0
+;gen = data generation open or not
+num_gen = 2
+
+[training]
+batch_size = 16
+epoch = 10
+epoch_mem = 10
+lr = 0.00001
+num_workers = 2
+
+[contrastive]
+margin = 0.3
+sample_k = 500
+contrastive_temp = 0.1
+
+[softprompt]
+tune = all
+; tune = prompt, all
+prompt_init = 0
+; # THAY ĐỔI: Chỉ giữ lại tùy chọn 0 (random).
+; # Các tùy chọn 1 và 2 dùng token ID của BERT cũ, không còn hợp lệ cho Qwen3.
+; # Code encoder.py mới đã được thiết kế để hoạt động tốt nhất với khởi tạo ngẫu nhiên.
+prompt_len = 3
+prompt_num = 4
+
+[Encoder]
+# THAY ĐỔI: Chuyển 'bert' thành 'qwen' để kích hoạt logic mới trong file encoder.py
+model = qwen
+
+# MỚI: Thêm dòng này để chỉ định tên model Qwen3 trên Hugging Face
+model_name = Qwen/Qwen3-0.6B
+
+# THAY ĐỔI: Cập nhật max_length nếu cần, 256 vẫn ổn cho Qwen3
+max_length = 256
+
+# THAY ĐỔI RẤT QUAN TRỌNG: Kích thước đầu ra của Qwen3-0.6B là 1024, không phải 768.
+encoder_output_size = 1024
+
+# XÓA: Các đường dẫn đến model cũ không còn cần thiết nữa
+; bert_path = google-bert/bert-base-uncased
+; roberta_path = ./roberta-base
