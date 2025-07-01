@@ -1,8 +1,8 @@
-# requirements.txt (phiên bản cuối cùng, đã sửa lỗi torch)
+
 
 transformers>=4.42.0
 accelerate
-# THAY ĐỔI: Nâng cấp torch và thêm các thư viện liên quan
+#  Nâng cấp torch và thêm các thư viện liên quan
 torch>=2.3.1
 torchvision>=0.18.1
 torchaudio>=2.3.1
