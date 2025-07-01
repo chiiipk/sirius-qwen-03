@@ -57,7 +57,8 @@ class Manager(object):
             for k in instance.keys():
                 instance[k] = instance[k].to(self.config.device)
             hidden = encoder(instance)
-            fea = hidden.detach().cpu().float() # (1, H) - Chuyển sang float32 # (1, H)
+            # Quan trọng: Di chuyển ra CPU và chuyển sang float32 để lưu trữ ổn định
+            fea = hidden.detach().cpu().float() 
             features.append(fea)
         features = torch.cat(features, dim=0) # (M, H)
         proto = features.mean(0)
@@ -75,7 +76,8 @@ class Manager(object):
             for k in instance.keys():
                 instance[k] = instance[k].to(self.config.device)
             hidden = encoder(instance)
-            fea = hidden.detach().cpu().float() # (1, H) - Chuyển sang float32
+            # Quan trọng: Di chuyển ra CPU và chuyển sang float32 để lưu trữ ổn định
+            fea = hidden.detach().cpu().float() 
             features.append(fea)
 
         features = np.concatenate(features) # tensor-->numpy array; (N, H)
@@ -103,6 +105,7 @@ class Manager(object):
 
 
     def get_cluster_and_centroids(self, embeddings):
+        # Chuyển embeddings về float32 trên CPU để tương thích với scikit-learn
         embeddings_np = embeddings.cpu().float().numpy()
         clustering_model = AgglomerativeClustering(n_clusters=None, metric="cosine", linkage="average", distance_threshold=args.distance_threshold)
         clusters = clustering_model.fit_predict(embeddings_np)
@@ -124,7 +127,6 @@ class Manager(object):
         triplet = TripletLoss()
         optimizer.zero_grad()
         
-
         relation_2_cluster = {}
         rep_seen_des = []
         relationid2_clustercentroids = {}
@@ -139,7 +141,6 @@ class Manager(object):
                 batch_instance['ids'] = torch.tensor([seen_des[self.id2rel[label.item()]]['ids'] for label in labels]).to(self.config.device)
                 batch_instance['mask'] = torch.tensor([seen_des[self.id2rel[label.item()]]['mask'] for label in labels]).to(self.config.device)
 
-                
                 hidden = encoder(instance) # b, dim
                 rep_des = encoder(batch_instance, is_des = True) # b, dim
                 rep_des_2 = encoder(batch_instance, is_des = True) # b, dim
@@ -153,8 +154,7 @@ class Manager(object):
                             'mask' : torch.tensor([list_seen_des[i2]['mask']]).to(self.config.device)
                         }
                         hidden_des = encoder(sample, is_des=True)
-                        hidden_des = hidden_des.detach().cpu().data
-                        rep_seen_des.append(hidden_des)
+                        rep_seen_des.append(hidden_des) # Giữ nguyên trên GPU và dtype gốc
                     rep_seen_des = torch.cat(rep_seen_des, dim=0)
                     clusters, clusters_centroids = self.get_cluster_and_centroids(rep_seen_des)
                 flag = 0
@@ -223,6 +223,9 @@ class Manager(object):
                 sys.stdout.flush() 
         print('')
 
+    # ################################################################################# #
+    # #############################   ĐOẠN CODE ĐÃ SỬA   ############################# #
+    # ################################################################################# #
     def eval_encoder_proto_des(self, encoder, seen_proto, seen_relid, test_data, rep_des):
         batch_size = 16
         test_loader = get_data_loader(self.config, test_data, False, False, batch_size)
@@ -233,31 +236,47 @@ class Manager(object):
                 instance[k] = instance[k].to(self.config.device)
             with torch.no_grad():
                 hidden = encoder(instance)
-            fea = hidden.cpu().data
-            logits = self._cosine_similarity(fea, seen_proto)
-            logits_des = self._cosine_similarity(fea, rep_des)
+            
+            # `hidden` có thể là bfloat16 trên GPU.
+            # `seen_proto` và `rep_des` cần được chuyển sang cùng device và dtype với `hidden`.
+            
+            # Đảm bảo các tensor prototypes và descriptions ở đúng device và có cùng dtype với hidden
+            device = hidden.device
+            dtype = hidden.dtype
+            
+            seen_proto_aligned = seen_proto.to(device=device, dtype=dtype)
+            rep_des_aligned = rep_des.to(device=device, dtype=dtype)
+            
+            # `fea` bây giờ sẽ là `hidden` trực tiếp, không cần di chuyển qua CPU
+            fea = hidden
+            
+            # SỬA LỖI: Chuyển đổi dtype của `seen_proto` và `rep_des` để khớp với `fea`
+            logits = self._cosine_similarity(fea, seen_proto_aligned)
+            logits_des = self._cosine_similarity(fea, rep_des_aligned)
             logits_rrf = logits + logits_des
 
             # by logits
-            cur_index = torch.argmax(logits, dim=1)
+            # Di chuyển label về CPU để so sánh với pred
+            label = label.cpu()
+            cur_index = torch.argmax(logits.cpu(), dim=1)
             pred = torch.tensor([seen_relid[int(i)] for i in cur_index])
             correct = torch.eq(pred, label).sum().item()
             corrects += correct
             
             # by logits_des
-            cur_index1 = torch.argmax(logits_des,dim=1)
+            cur_index1 = torch.argmax(logits_des.cpu(),dim=1)
             pred1 = torch.tensor([seen_relid[int(i)] for i in cur_index1])
             correct1 = torch.eq(pred1, label).sum().item()
             corrects1 += correct1
 
             # by rrf
-            cur_index2 = torch.argmax(logits_rrf,dim=1)
+            cur_index2 = torch.argmax(logits_rrf.cpu(),dim=1)
             pred2 = torch.tensor([seen_relid[int(i)] for i in cur_index2])
             correct2 = torch.eq(pred2, label).sum().item()
             corrects2 += correct2
             
-            total += batch_size
-            acc, acc1, acc2 = correct / batch_size, correct1 / batch_size, correct2 / batch_size
+            total += label.size(0) # Sử dụng kích thước thực tế của batch
+            acc, acc1, acc2 = correct / label.size(0), correct1 / label.size(0), correct2 / label.size(0)
             
             sys.stdout.write(f'[EVAL RRF] batch: {batch_num:4} | acc: {100*acc2:3.2f}%, total acc: {100*(corrects2/total):3.2f}%   ' + '\r')
             sys.stdout.flush()
@@ -280,8 +299,7 @@ class Manager(object):
         
         if self.config.model == 'qwen':
             print(f"Đang tải tokenizer cho: {self.config.model_name}")
-            self.tokenizer = AutoTokenizer.from_pretrained(self.config.model_name, trust_remote_code=True)
-            # Quan trọng: Set pad_token nếu nó chưa tồn tại
+            self.tokenizer = AutoTokenizer.from_pretrained(self.config.model_name, trust_remote_code=True, torch_dtype=torch.bfloat16) # Thêm torch_dtype
             if self.tokenizer.pad_token is None:
                 self.tokenizer.pad_token = self.tokenizer.eos_token
         else:
@@ -289,10 +307,9 @@ class Manager(object):
             print(f"Đang tải tokenizer cho: {self.config.bert_path}")
             self.tokenizer = BertTokenizer.from_pretrained(self.config.bert_path)
 
-        # Không cần set vocab_size cho Qwen3
-        # self.config.vocab_size = self.tokenizer.vocab_size
         encoder = EncodingModel(self.config)
-        
+        encoder.to(self.config.device) # Đảm bảo model ở trên đúng device
+
         cur_acc, total_acc = [], []
         cur_acc1, total_acc1 = [], []
         cur_acc2, total_acc2 = [], []
@@ -306,22 +323,20 @@ class Manager(object):
         for step, (training_data, valid_data, test_data, current_relations, \
             historic_test_data, seen_relations, seen_descriptions) in enumerate(sampler):
 
-            # --- THAY ĐỔI CỐT LÕI: TOKENIZATION ---
             for rel in current_relations:
                 if rel not in seen_des:
                     description = seen_descriptions[rel][0]
-                    # Sử dụng tokenizer mới (đã được load ở trên)
                     tokenized_output = self.tokenizer(
                         description,
                         padding='max_length',
                         truncation=True,
                         max_length=self.config.max_length,
-                        return_tensors='pt' # Trả về tensor để dễ xử lý
+                        return_tensors='pt'
                     )
                     
                     seen_des[rel] = {
-                        'ids': tokenized_output['input_ids'].squeeze().tolist(), # Chuyển về list
-                        'mask': tokenized_output['attention_mask'].squeeze().tolist() # Chuyển về list
+                        'ids': tokenized_output['input_ids'].squeeze().tolist(),
+                        'mask': tokenized_output['attention_mask'].squeeze().tolist()
                     }
             
             seen_relid = [self.rel2id[rel] for rel in seen_relations]
@@ -348,6 +363,7 @@ class Manager(object):
             for rel in seen_relations:
                 proto, _ = self.get_memory_proto(encoder, memory_samples[rel])
                 seen_proto.append(proto)
+            # seen_proto được tạo ra trên CPU với kiểu float32
             seen_proto = torch.stack(seen_proto, dim=0)
 
             test_data_initialize_cur = [item for rel in current_relations for item in test_data[rel]]
@@ -363,9 +379,11 @@ class Manager(object):
                     }
                     hidden = encoder(sample, is_des=True)
                     rep_des_tensors.append(hidden)
+                # rep_des được tạo ra trên GPU với kiểu bfloat16
                 rep_des = torch.cat(rep_des_tensors, dim=0)
             encoder.train()
-
+            
+            # Khi gọi hàm eval, các tensor sẽ được điều chỉnh device và dtype bên trong
             ac1, ac1_des, ac1_rrf = self.eval_encoder_proto_des(encoder,seen_proto,seen_relid,test_data_initialize_cur,rep_des)
             ac2, ac2_des, ac2_rrf = self.eval_encoder_proto_des(encoder,seen_proto,seen_relid,test_data_initialize_seen, rep_des)
             
@@ -392,8 +410,6 @@ class Manager(object):
             
         torch.cuda.empty_cache()
         return total_acc_num, total_acc_num1, total_acc_num2
-
-
 
 
 if __name__ == '__main__':
