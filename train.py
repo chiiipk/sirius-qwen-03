@@ -219,10 +219,13 @@ class Manager(object):
                 loss.backward()
                 optimizer.step()
                 optimizer.zero_grad()
+                # Đoạn code MỚI trong hàm train_model
                 if is_memory:
-                    self.moment.update_des(ind, hidden.detach().cpu().data, rep_des.detach().cpu().data, is_memory=True)
+                    # Thêm .float() vào đây
+                    self.moment.update_des(ind, hidden.detach().cpu().float(), rep_des.detach().cpu().float(), is_memory=True)
                 else:
-                    self.moment.update_des(ind, hidden.detach().cpu().data, rep_des.detach().cpu().data, is_memory=False)
+                    # Và thêm .float() vào đây
+                    self.moment.update_des(ind, hidden.detach().cpu().float(), rep_des.detach().cpu().float(), is_memory=False)
 
                 if is_memory:
                     sys.stdout.write('MemoryTrain:  epoch {0:2}, batch {1:5} | loss: {2:2.7f}'.format(i, batch_num, loss.item()) + '\r')
