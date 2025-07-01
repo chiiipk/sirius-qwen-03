@@ -8,7 +8,7 @@ accelerate
 torch==2.3.0
 scikit-learn==1.4.2
 einops
-llm2vec==0.2.2
+#llm2vec==0.2.2
 #flash-attn --no-build-isolation
 openai==1.51.0
 nltk==3.8.1
