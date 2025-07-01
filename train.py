@@ -407,9 +407,15 @@ class Manager(object):
         return total_acc_num, total_acc_num1, total_acc_num2
 
 
+#
+# ----- BẠN HÃY XÓA HẾT MỌI THỨ TỪ ĐÂY TRỞ XUỐNG TRONG FILE train.py -----
+#
+# ----- VÀ THAY THẾ BẰNG TOÀN BỘ KHỐI CODE NÀY -----
+#
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    # ... Phần argparse không thay đổi ...
+    # Thêm các đối số dòng lệnh...
     parser.add_argument("--task_name", default="FewRel", type=str)
     parser.add_argument("--num_k", default=5, type=int)
     parser.add_argument("--num_gen", default=2, type=int)
@@ -420,28 +426,60 @@ if __name__ == '__main__':
     parser.add_argument("--temperature", default=0.01, type=float)
     parser.add_argument("--distance_threshold", default=0.1, type=float)
     parser.add_argument("--top_k", default=10, type=int)
-    args = parser.parse_args()
-    config = Config('config.ini')
-    config.task_name = args.task_name
-    config.num_k = args.num_k
-    config.num_gen = args.num_gen
     
+    args = parser.parse_args()
+    
+    # Đọc cấu hình từ file .ini
+    config = Config('config.ini')
+    
+    # Cập nhật cấu hình từ các đối số dòng lệnh (nếu có)
+    for key, value in vars(args).items():
+        if value is not None:
+             setattr(config, key, value)
+
     print('#############params############')
     config.device = torch.device(config.device if torch.cuda.is_available() else "cpu")
     print(config.device)
-    print(f'Task={config.task_name}, {config.num_k}-shot')
-    # THAY ĐỔI: In ra model_name nếu là qwen
+
+    # In ra giá trị task_name để gỡ lỗi
+    print(f"DEBUG: Giá trị của config.task_name là: '{config.task_name}' (Loại: {type(config.task_name)})")
+    
+    # So sánh và gán đường dẫn
+    if config.task_name == 'FewRel':
+        print("INFO: Đang cấu hình đường dẫn cho tác vụ FewRel.")
+        config.rel_index = './data/CFRLFewRel/rel_index.npy'
+        config.relation_name = './data/CFRLFewRel/relation_name.txt'
+        config.relation_description = './data/CFRLFewRel/relation_description.txt'
+        if config.num_k == 5:
+            config.rel_cluster_label = './data/CFRLFewRel/CFRLdata_10_100_10_5/rel_cluster_label_0.npy'
+            config.training_data = './data/CFRLFewRel/CFRLdata_10_100_10_5/train_0.txt'
+            config.valid_data = './data/CFRLFewRel/CFRLdata_10_100_10_5/valid_0.txt'
+            config.test_data = './data/CFRLFewRel/CFRLdata_10_100_10_5/test_0.txt'
+        elif config.num_k == 10:
+            config.rel_cluster_label = './data/CFRLFewRel/CFRLdata_10_100_10_10/rel_cluster_label_0.npy'
+            config.training_data = './data/CFRLFewRel/CFRLdata_10_100_10_10/train_0.txt'
+            config.valid_data = './data/CFRLFewRel/CFRLdata_10_100_10_10/valid_0.txt'
+            config.test_data = './data/CFRLFewRel/CFRLdata_10_100_10_10/test_0.txt'
+            
+    elif config.task_name == 'Tacred':
+        print("INFO: Đang cấu hình đường dẫn cho tác vụ Tacred.")
+        config.rel_index = './data/CFRLTacred/rel_index.npy'
+        config.relation_name = './data/CFRLTacred/relation_name.txt'
+        config.relation_description = './data/CFRLTacred/relation_description.txt'
+        # ... (các đường dẫn khác cho Tacred) ...
+    else:
+        # Báo lỗi nếu task_name không hợp lệ
+        raise ValueError(f"Giá trị của 'task_name' là '{config.task_name}' không được hỗ trợ. Vui lòng kiểm tra file config.ini hoặc tham số dòng lệnh.")
+
     if config.model == 'qwen':
         print(f'Encoding model: {config.model_name}')
     else:
         print(f'Encoding model: {config.model}')
+    print(f'Task={config.task_name}, {config.num_k}-shot')
     print(f'pattern={config.pattern}')
-    print(f'mem={config.memory_size}, margin={config.margin}, gen={config.gen}, gen_num={config.num_gen}')
     print('#############params############')
-    
-    # ... Phần còn lại của __main__ không thay đổi ...
-    # (Đã lược bớt để dễ đọc)
-    # seed 
+
+    # ... (phần code còn lại để chạy vòng lặp huấn luyện) ...
     random.seed(config.seed) 
     np.random.seed(config.seed)
     torch.manual_seed(config.seed)
