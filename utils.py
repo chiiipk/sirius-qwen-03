@@ -23,40 +23,42 @@ class Moment:
         self.temperature = config.contrastive_temp
         self.m = config.margin
 
+# Bên trong file utils.py
+
     def init_moment(self, encoder, dataset, is_memory=False):
         encoder.eval()
         datalen = len(dataset)
         if not is_memory:
             self.features = torch.zeros(datalen, self.config.encoder_output_size)
             self.features_des = torch.zeros(datalen, self.config.encoder_output_size)
-            # THAY ĐỔI: Sử dụng data_loader tổng quát
             data_loader = get_data_loader(self.config, dataset) # shuffle=False
             lbs = []
             for step, (instance, labels, ind) in enumerate(data_loader):
                 for k in instance.keys():
                     instance[k] = instance[k].to(self.config.device)
                 hidden = encoder(instance)
-                fea = hidden.detach().cpu().data
+                # SỬA Ở ĐÂY:
+                fea = hidden.detach().cpu().float() # Chuyển sang float32
                 self.update(ind, fea)
-                lbs.append(labels) # shuffle=False
+                lbs.append(labels)
             lbs = torch.cat(lbs)
             self.labels = lbs
         else:
             self.mem_samples = dataset
             self.mem_features = torch.zeros(datalen, self.config.encoder_output_size)
             self.mem_features_des = torch.zeros(datalen, self.config.encoder_output_size)
-            # THAY ĐỔI: Sử dụng data_loader tổng quát
             data_loader = get_data_loader(self.config, dataset) # shuffle=False
             lbs = []
             for step, (instance, labels, ind) in enumerate(data_loader):
                 for k in instance.keys():
                     instance[k] = instance[k].to(self.config.device)
                 hidden = encoder(instance)
-                fea = hidden.detach().cpu().data
+                # VÀ SỬA Ở ĐÂY:
+                fea = hidden.detach().cpu().float() # Chuyển sang float32
                 self.update(ind, fea, is_memory)
-                lbs.append(labels) # shuffle=False
+                lbs.append(labels)
             lbs = torch.cat(lbs)
-            self.mem_labels = lbs            
+            self.mem_labels = lbs      
 
     def update(self, ind, feature, is_memory=False):
         if not is_memory:
