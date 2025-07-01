@@ -7,7 +7,6 @@ def get_data_loader(config, data, shuffle=False, drop_last=False, batch_size=Non
     else:
         batch = min(batch_size, len(data))
     
-    # Đổi tên class Dataset
     dataset = CustomDataset(data, config)
     
     data_loader = DataLoader(
