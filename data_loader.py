@@ -30,11 +30,9 @@ class CustomDataset(Dataset):
         return len(self.data)
 
     def __getitem__(self, idx):
-        # Trả về cả instance dữ liệu và index của nó
         return (self.data[idx], idx)
 
     def collate_fn(self, data):
-        # Logic bên trong không thay đổi vì nó chỉ thu thập dữ liệu đã được xử lý sẵn
         batch_instance = {'ids': [], 'mask': []} 
         batch_label = []
         batch_idx = []
