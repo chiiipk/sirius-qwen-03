@@ -105,9 +105,11 @@ class Manager(object):
 
         return mem_set, mem_feas
 
+    # Bên trong file train.py
+
     def get_cluster_and_centroids(self, embeddings):
-        # Chuyển embeddings sang CPU và numpy để dùng với scikit-learn
-        embeddings_np = embeddings.cpu().numpy()
+        # Chuyển embeddings sang CPU, float32, và sau đó là numpy để dùng với scikit-learn
+        embeddings_np = embeddings.cpu().float().numpy()
         clustering_model = AgglomerativeClustering(n_clusters=None, metric="cosine", linkage="average", distance_threshold=args.distance_threshold)
         clusters = clustering_model.fit_predict(embeddings_np)
         
@@ -117,7 +119,7 @@ class Manager(object):
             cluster_embeddings = embeddings[clusters == cluster_id]
             centroid = torch.mean(cluster_embeddings, dim=0)
             centroids[cluster_id] = centroid
-
+    
         return clusters, centroids
 
     def train_model(self, encoder, training_data, seen_des, seen_relations, list_seen_des, is_memory=False):
