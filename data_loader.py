@@ -1,7 +1,6 @@
 import torch
 from torch.utils.data import Dataset, DataLoader
 
-# Đổi tên hàm cho tổng quát
 def get_data_loader(config, data, shuffle=False, drop_last=False, batch_size=None):
     if batch_size is None:
         batch = min(config.batch_size, len(data))
@@ -23,7 +22,6 @@ def get_data_loader(config, data, shuffle=False, drop_last=False, batch_size=Non
 
     return data_loader
 
-# Đổi tên class từ BERTDataset thành CustomDataset
 class CustomDataset(Dataset):    
     def __init__(self, data, config):
         self.data = data
