@@ -37,23 +37,13 @@ class EncodingModel(nn.Module):
         self.info_nce_fc = nn.Linear(self.embedding_dim, self.embedding_dim).to(self.encoder.device)
 
     def _init_prompt(self):
-        """
-        Khởi tạo trọng số cho soft prompt.
-        Thay vì dùng các token ID cố định của BERT,dùng phương pháp khởi tạo ngẫu nhiên
-        theo phân phối chuẩn
-        """
         torch.nn.init.normal_(self.softprompt_encoder.weight, std=0.02)
 
     def embedding_input(self, input_ids):
-        """
-        Nhúng các prompt ảo (soft prompt) vào chuỗi input embedding.
-        """
-        # Lấy embedding gốc từ input_ids
+
         input_embedding = self.word_embedding(input_ids)
-        # Lấy embedding của prompt ảo
         prompt_embedding = self.softprompt_encoder(self.prompt_ids)
 
-        # Thay thế các token placeholder bằng embedding của prompt ảo
         for i in range(input_ids.size(0)):
             p = 0
             for j in range(input_ids.size(1)):
@@ -64,9 +54,7 @@ class EncodingModel(nn.Module):
         return input_embedding
 
     def get_last_token_embedding(self, hidden_states, attention_mask):
-        """
-        Lấy hidden state của token cuối cùng (không phải padding) làm embedding cho câu.
-        """
+ 
         sequence_lengths = torch.sum(attention_mask, dim=1) - 1
         batch_range = torch.arange(hidden_states.size(0), device=hidden_states.device)
         
