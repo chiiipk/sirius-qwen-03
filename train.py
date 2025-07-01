@@ -15,12 +15,10 @@ import warnings
 warnings.filterwarnings("ignore")
 
 from sampler import data_sampler_CFRL
-# THAY ĐỔI: Sử dụng data_loader tổng quát
 from data_loader import get_data_loader
 from utils import Moment
 from encoder import EncodingModel
 from losses import TripletLoss
-# MỚI: Import AutoTokenizer
 from transformers import AutoTokenizer
 
 class Manager(object):
@@ -52,7 +50,6 @@ class Manager(object):
         '''
         only for one relation data
         '''
-        # THAY ĐỔI: Sử dụng data_loader tổng quát
         data_loader = get_data_loader(config, dataset, shuffle=False, drop_last=False,  batch_size=1)
         features = []
         encoder.eval()
@@ -71,7 +68,6 @@ class Manager(object):
         only for one relation data
         '''
         N, M = len(dataset), self.config.memory_size
-        # THAY ĐỔI: Sử dụng data_loader tổng quát
         data_loader = get_data_loader(self.config, dataset, shuffle=False, drop_last= False, batch_size=1) # batch_size must = 1
         features = []
         encoder.eval()
@@ -105,10 +101,8 @@ class Manager(object):
 
         return mem_set, mem_feas
 
-    # Bên trong file train.py
 
     def get_cluster_and_centroids(self, embeddings):
-        # Chuyển embeddings sang CPU, float32, và sau đó là numpy để dùng với scikit-learn
         embeddings_np = embeddings.cpu().float().numpy()
         clustering_model = AgglomerativeClustering(n_clusters=None, metric="cosine", linkage="average", distance_threshold=args.distance_threshold)
         clusters = clustering_model.fit_predict(embeddings_np)
@@ -123,7 +117,6 @@ class Manager(object):
         return clusters, centroids
 
     def train_model(self, encoder, training_data, seen_des, seen_relations, list_seen_des, is_memory=False):
-        # THAY ĐỔI: Sử dụng data_loader tổng quát
         data_loader = get_data_loader(self.config, training_data, shuffle=True)
         optimizer = optim.Adam(params=encoder.parameters(), lr=self.config.lr)
         encoder.train()
@@ -131,8 +124,7 @@ class Manager(object):
         triplet = TripletLoss()
         optimizer.zero_grad()
         
-        # ... Phần còn lại của hàm train_model không thay đổi logic cốt lõi ...
-        # (Tôi sẽ giữ nguyên phần này để tránh làm phức tạp hóa)
+
         relation_2_cluster = {}
         rep_seen_des = []
         relationid2_clustercentroids = {}
@@ -219,12 +211,9 @@ class Manager(object):
                 loss.backward()
                 optimizer.step()
                 optimizer.zero_grad()
-                # Đoạn code MỚI trong hàm train_model
                 if is_memory:
-                    # Thêm .float() vào đây
                     self.moment.update_des(ind, hidden.detach().cpu().float(), rep_des.detach().cpu().float(), is_memory=True)
                 else:
-                    # Và thêm .float() vào đây
                     self.moment.update_des(ind, hidden.detach().cpu().float(), rep_des.detach().cpu().float(), is_memory=False)
 
                 if is_memory:
@@ -236,7 +225,6 @@ class Manager(object):
 
     def eval_encoder_proto_des(self, encoder, seen_proto, seen_relid, test_data, rep_des):
         batch_size = 16
-        # THAY ĐỔI: Sử dụng data_loader tổng quát
         test_loader = get_data_loader(self.config, test_data, False, False, batch_size)
         corrects, corrects1, corrects2, total = 0.0, 0.0, 0.0, 0.0
         encoder.eval()
@@ -290,7 +278,6 @@ class Manager(object):
         self.rel2id = sampler.rel2id
         self.r2desc = self._read_description(self.config.relation_description)
         
-        # MỚI: Tải tokenizer cho Qwen3 ở đây, ngay từ đầu
         if self.config.model == 'qwen':
             print(f"Đang tải tokenizer cho: {self.config.model_name}")
             self.tokenizer = AutoTokenizer.from_pretrained(self.config.model_name, trust_remote_code=True)
@@ -298,12 +285,10 @@ class Manager(object):
             if self.tokenizer.pad_token is None:
                 self.tokenizer.pad_token = self.tokenizer.eos_token
         else:
-            # Giữ lại logic cũ cho BERT nếu cần
             from transformers import BertTokenizer
             print(f"Đang tải tokenizer cho: {self.config.bert_path}")
             self.tokenizer = BertTokenizer.from_pretrained(self.config.bert_path)
 
-        # THAY ĐỔI: Khởi tạo encoder sau khi đã có tokenizer
         # Không cần set vocab_size cho Qwen3
         # self.config.vocab_size = self.tokenizer.vocab_size
         encoder = EncodingModel(self.config)
@@ -318,7 +303,6 @@ class Manager(object):
         memory_samples = {}
         seen_des = {}
         
-        # Vòng lặp chính
         for step, (training_data, valid_data, test_data, current_relations, \
             historic_test_data, seen_relations, seen_descriptions) in enumerate(sampler):
 
@@ -340,7 +324,6 @@ class Manager(object):
                         'mask': tokenized_output['attention_mask'].squeeze().tolist() # Chuyển về list
                     }
             
-            # ... Các phần còn lại của vòng lặp train gần như giữ nguyên ...
             seen_relid = [self.rel2id[rel] for rel in seen_relations]
             seen_des_by_id = {self.rel2id[rel]: seen_des[rel] for rel in seen_relations}
             list_seen_des = [seen_des_by_id[rel_id] for rel_id in seen_relid]
@@ -361,7 +344,6 @@ class Manager(object):
             self.moment.init_moment(encoder, training_data_initialize, is_memory=False)
             self.train_model(encoder, training_data_initialize, seen_des, seen_relations, list_seen_des, is_memory=False)
             
-            # Update proto
             seen_proto = []  
             for rel in seen_relations:
                 proto, _ = self.get_memory_proto(encoder, memory_samples[rel])
@@ -412,15 +394,10 @@ class Manager(object):
         return total_acc_num, total_acc_num1, total_acc_num2
 
 
-#
-# ----- BẠN HÃY XÓA HẾT MỌI THỨ TỪ ĐÂY TRỞ XUỐNG TRONG FILE train.py -----
-#
-# ----- VÀ THAY THẾ BẰNG TOÀN BỘ KHỐI CODE NÀY -----
-#
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    # Thêm các đối số dòng lệnh...
     parser.add_argument("--task_name", default="FewRel", type=str)
     parser.add_argument("--num_k", default=5, type=int)
     parser.add_argument("--num_gen", default=2, type=int)
@@ -434,10 +411,8 @@ if __name__ == '__main__':
     
     args = parser.parse_args()
     
-    # Đọc cấu hình từ file .ini
     config = Config('config.ini')
     
-    # Cập nhật cấu hình từ các đối số dòng lệnh (nếu có)
     for key, value in vars(args).items():
         if value is not None:
              setattr(config, key, value)
@@ -484,7 +459,6 @@ if __name__ == '__main__':
     print(f'pattern={config.pattern}')
     print('#############params############')
 
-    # ... (phần code còn lại để chạy vòng lặp huấn luyện) ...
     random.seed(config.seed) 
     np.random.seed(config.seed)
     torch.manual_seed(config.seed)
