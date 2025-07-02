@@ -41,10 +41,13 @@ class Manager(object):
         return dist
 
     def _cosine_similarity(self, x1, x2):
-        x1_norm = F.normalize(x1, p=2, dim=1)  # (B, H)
-        x2_norm = F.normalize(x2, p=2, dim=1)  # (N, H)
-        sim = torch.matmul(x1_norm, x2_norm.T)  # (B, N)
+        # SỬA LỖI: Chuyển x2 sang cùng dtype và device với x1 trước khi tính toán
+        x2_aligned = x2.to(device=x1.device, dtype=x1.dtype)
+        x1_norm = F.normalize(x1, p=2, dim=1)
+        x2_norm = F.normalize(x2_aligned, p=2, dim=1)
+        sim = torch.matmul(x1_norm, x2_norm.T)
         return sim
+
 
     def get_memory_proto(self, encoder, dataset):
         '''
@@ -442,7 +445,6 @@ if __name__ == '__main__':
     
     # So sánh và gán đường dẫn
     if config.task_name == 'FewRel':
-        print("INFO: Đang cấu hình đường dẫn cho tác vụ FewRel.")
         config.rel_index = './data/CFRLFewRel/rel_index.npy'
         config.relation_name = './data/CFRLFewRel/relation_name.txt'
         config.relation_description = './data/CFRLFewRel/relation_description.txt'
@@ -456,13 +458,21 @@ if __name__ == '__main__':
             config.training_data = './data/CFRLFewRel/CFRLdata_10_100_10_10/train_0.txt'
             config.valid_data = './data/CFRLFewRel/CFRLdata_10_100_10_10/valid_0.txt'
             config.test_data = './data/CFRLFewRel/CFRLdata_10_100_10_10/test_0.txt'
-            
-    elif config.task_name == 'Tacred':
-        print("INFO: Đang cấu hình đường dẫn cho tác vụ Tacred.")
+    else:
         config.rel_index = './data/CFRLTacred/rel_index.npy'
         config.relation_name = './data/CFRLTacred/relation_name.txt'
         config.relation_description = './data/CFRLTacred/relation_description.txt'
-        # ... (các đường dẫn khác cho Tacred) ...
+        if config.num_k == 5:
+            config.rel_cluster_label = './data/CFRLTacred/CFRLdata_6_100_5_5/rel_cluster_label_0.npy'
+            config.training_data = './data/CFRLTacred/CFRLdata_6_100_5_5/train_0.txt'
+            config.valid_data = './data/CFRLTacred/CFRLdata_6_100_5_5/valid_0.txt'
+            config.test_data = './data/CFRLTacred/CFRLdata_6_100_5_5/test_0.txt'
+        elif config.num_k == 10:
+            config.rel_cluster_label = './data/CFRLTacred/CFRLdata_6_100_5_10/rel_cluster_label_0.npy'
+            config.training_data = './data/CFRLTacred/CFRLdata_6_100_5_10/train_0.txt'
+            config.valid_data = './data/CFRLTacred/CFRLdata_6_100_5_10/valid_0.txt'
+            config.test_data = './data/CFRLTacred/CFRLdata_6_100_5_10/test_0.txt'        
+
     else:
         # Báo lỗi nếu task_name không hợp lệ
         raise ValueError(f"Giá trị của 'task_name' là '{config.task_name}' không được hỗ trợ. Vui lòng kiểm tra file config.ini hoặc tham số dòng lệnh.")
