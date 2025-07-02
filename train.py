@@ -22,10 +22,10 @@ from losses import TripletLoss
 from transformers import AutoTokenizer
 
 class Manager(object):
-    def __init__(self, config) -> None:
+    def __init__(self, config, args) -> None:
         super().__init__()
         self.config = config
-
+        self.args = args 
     def _edist(self, x1, x2):
         '''
         input: x1 (B, H), x2 (N, H) ; N is the number of relations
@@ -47,7 +47,6 @@ class Manager(object):
         sim = torch.matmul(x1_norm, x2_norm.T)
         return sim
 
-
     def get_memory_proto(self, encoder, dataset):
         '''
         only for one relation data
@@ -59,8 +58,7 @@ class Manager(object):
             for k in instance.keys():
                 instance[k] = instance[k].to(self.config.device)
             hidden = encoder(instance)
-            # Quan trọng: Di chuyển ra CPU và chuyển sang float32 để lưu trữ ổn định
-            fea = hidden.detach().cpu().float() 
+            fea = hidden.detach().cpu().float()
             features.append(fea)
         features = torch.cat(features, dim=0) # (M, H)
         proto = features.mean(0)
@@ -78,8 +76,7 @@ class Manager(object):
             for k in instance.keys():
                 instance[k] = instance[k].to(self.config.device)
             hidden = encoder(instance)
-            # Quan trọng: Di chuyển ra CPU và chuyển sang float32 để lưu trữ ổn định
-            fea = hidden.detach().cpu().float() 
+            fea = hidden.detach().cpu().float()
             features.append(fea)
 
         features = np.concatenate(features) # tensor-->numpy array; (N, H)
@@ -88,7 +85,7 @@ class Manager(object):
             return copy.deepcopy(dataset), torch.from_numpy(features)
 
         num_clusters = M # memory_size < len(dataset)
-        distances = KMeans(n_clusters=num_clusters, random_state=0).fit_transform(features) # (N, M)
+        distances = KMeans(n_clusters=num_clusters, random_state=0, n_init='auto').fit_transform(features) # (N, M)
 
         mem_set = []
         mem_feas = []
@@ -101,23 +98,20 @@ class Manager(object):
         mem_feas = np.stack(mem_feas, axis=0) # (M, H)
         mem_feas = torch.from_numpy(mem_feas)
         features = torch.from_numpy(features) # (N, H) tensor
-        rel_proto = features.mean(0) # (H)
-
         return mem_set, mem_feas
 
 
     def get_cluster_and_centroids(self, embeddings):
         embeddings_np = embeddings.cpu().float().numpy()
-        clustering_model = AgglomerativeClustering(n_clusters=None, metric="cosine", linkage="average", distance_threshold=args.distance_threshold)
+        clustering_model = AgglomerativeClustering(n_clusters=None, metric="cosine", linkage="average", distance_threshold=self.args.distance_threshold)
         clusters = clustering_model.fit_predict(embeddings_np)
-        
+
         centroids = {}
         for cluster_id in np.unique(clusters):
-            # Lấy embeddings gốc (tensor) cho cluster này
             cluster_embeddings = embeddings[clusters == cluster_id]
             centroid = torch.mean(cluster_embeddings, dim=0)
             centroids[cluster_id] = centroid
-    
+
         return clusters, centroids
 
     def train_model(self, encoder, training_data, seen_des, seen_relations, list_seen_des, is_memory=False):
@@ -127,25 +121,19 @@ class Manager(object):
         epoch = self.config.epoch_mem if is_memory else self.config.epoch
         triplet = TripletLoss()
         optimizer.zero_grad()
-        
-        relation_2_cluster = {}
-        rep_seen_des = []
-        relationid2_clustercentroids = {}
 
-        for i in range(epoch):         
+        for i in range(epoch):
             for batch_num, (instance, labels, ind) in enumerate(data_loader):
                 for k in instance.keys():
                     instance[k] = instance[k].to(self.config.device)
 
-                batch_instance = {'ids': [], 'mask': []} 
-
+                batch_instance = {'ids': [], 'mask': []}
                 batch_instance['ids'] = torch.tensor([seen_des[self.id2rel[label.item()]]['ids'] for label in labels]).to(self.config.device)
                 batch_instance['mask'] = torch.tensor([seen_des[self.id2rel[label.item()]]['mask'] for label in labels]).to(self.config.device)
 
                 hidden = encoder(instance) # b, dim
                 rep_des = encoder(batch_instance, is_des = True) # b, dim
                 rep_des_2 = encoder(batch_instance, is_des = True) # b, dim
-
 
                 with torch.no_grad():
                     rep_seen_des = []
@@ -155,8 +143,9 @@ class Manager(object):
                             'mask' : torch.tensor([list_seen_des[i2]['mask']]).to(self.config.device)
                         }
                         hidden_des = encoder(sample, is_des=True)
-                        rep_seen_des.append(hidden_des) # Giữ nguyên trên GPU và dtype gốc
+                        rep_seen_des.append(hidden_des)
                     rep_seen_des = torch.cat(rep_seen_des, dim=0)
+                    # SỬA LỖI: Gọi hàm get_cluster_and_centroids mà không cần truyền args vì nó đã là thuộc tính của class
                     clusters, clusters_centroids = self.get_cluster_and_centroids(rep_seen_des)
                 flag = 0
                 if len(clusters) == max(clusters) + 1:
@@ -167,32 +156,26 @@ class Manager(object):
                     relationid2_clustercentroids[self.rel2id[rel]] = clusters_centroids[clusters[index]]
 
                 relation_2_cluster = {}
-
                 for i1 in range(len(seen_relations)):
                     relation_2_cluster[self.rel2id[seen_relations[i1]]] = clusters[i1]
 
-                loss2 = self.moment.mutual_information_loss_cluster(hidden, rep_des, labels, temperature=args.temperature,relation_2_cluster=relation_2_cluster)  
-                loss4 = self.moment.mutual_information_loss_cluster(rep_des, rep_des_2, labels, temperature=args.temperature,relation_2_cluster=relation_2_cluster)  
+                loss2 = self.moment.mutual_information_loss_cluster(hidden, rep_des, labels, temperature=self.args.temperature,relation_2_cluster=relation_2_cluster)
+                loss4 = self.moment.mutual_information_loss_cluster(rep_des, rep_des_2, labels, temperature=self.args.temperature,relation_2_cluster=relation_2_cluster)
 
-                cluster_centroids = []
+                cluster_centroids_list = [relationid2_clustercentroids[label.item()] for label in labels]
+                cluster_centroids  = torch.stack(cluster_centroids_list, dim = 0).to(self.config.device)
 
-                for label in labels:
-                    cluster_centroids.append(relationid2_clustercentroids[label.item()])
-
-                cluster_centroids  = torch.stack(cluster_centroids, dim = 0).to(self.config.device)
-                
                 nearest_cluster_centroids = []
                 for hid in hidden:
-                    cos_similarities = torch.nn.functional.cosine_similarity(hid.unsqueeze(0), cluster_centroids, dim=1)
+                    cos_similarities = torch.nn.functional.cosine_similarity(hid.unsqueeze(0), cluster_centroids.to(hid.dtype), dim=1)
 
                     try:
-                        top2_similarities, top2_indices = torch.topk(cos_similarities, k=2, dim=0)
-
-                        if len(top2_indices) > 1:
+                        k_val = min(2, cos_similarities.shape[0])
+                        if k_val > 1:
+                            top2_similarities, top2_indices = torch.topk(cos_similarities, k=k_val, dim=0)
                             top2_centroids = relationid2_clustercentroids[labels[top2_indices[1].item()].item()]
                         else:
                             top2_centroids = relationid2_clustercentroids[labels[torch.argmax(cos_similarities).item()].item()]
-
                     except RuntimeError as e:
                         print(f"RuntimeError in top-k selection: {e}")
                         top2_centroids = relationid2_clustercentroids[labels[torch.argmax(cos_similarities).item()].item()]
@@ -202,13 +185,12 @@ class Manager(object):
                 nearest_cluster_centroids = torch.stack(nearest_cluster_centroids, dim = 0).to(self.config.device)
                 loss1 = self.moment.contrastive_loss(hidden, labels, is_memory, des =rep_des, relation_2_cluster = relation_2_cluster)
 
-
                 if flag == 0:
                     loss3 = triplet(hidden, rep_des,  cluster_centroids) + triplet(hidden, cluster_centroids, nearest_cluster_centroids)
-                    loss = args.lambda_1*(loss1) + args.lambda_2*(loss2) + args.lambda_3*(loss3) + args.lambda_4*(loss4)
+                    loss = self.args.lambda_1*(loss1) + self.args.lambda_2*(loss2) + self.args.lambda_3*(loss3) + self.args.lambda_4*(loss4)
                 else:
-                    loss = args.lambda_1*(loss1) + args.lambda_2*(loss2) + args.lambda_4*(loss4)
-         
+                    loss = self.args.lambda_1*(loss1) + self.args.lambda_2*(loss2) + self.args.lambda_4*(loss4)
+
                 loss.backward()
                 optimizer.step()
                 optimizer.zero_grad()
@@ -221,10 +203,9 @@ class Manager(object):
                     sys.stdout.write('MemoryTrain:  epoch {0:2}, batch {1:5} | loss: {2:2.7f}'.format(i, batch_num, loss.item()) + '\r')
                 else:
                     sys.stdout.write('CurrentTrain: epoch {0:2}, batch {1:5} | loss: {2:2.7f}'.format(i, batch_num, loss.item()) + '\r')
-                sys.stdout.flush() 
+                sys.stdout.flush()
         print('')
 
-    
     def eval_encoder_proto_des(self, encoder, seen_proto, seen_relid, test_data, rep_des):
         batch_size = 16
         test_loader = get_data_loader(self.config, test_data, False, False, batch_size)
@@ -235,44 +216,37 @@ class Manager(object):
                 instance[k] = instance[k].to(self.config.device)
             with torch.no_grad():
                 hidden = encoder(instance)
-            
-          
-            
+
             device = hidden.device
             dtype = hidden.dtype
-            
+
             seen_proto_aligned = seen_proto.to(device=device, dtype=dtype)
             rep_des_aligned = rep_des.to(device=device, dtype=dtype)
-            
-            # `fea` bây giờ sẽ là `hidden` trực tiếp, không cần di chuyển qua CPU
+
             fea = hidden
-            
+
             logits = self._cosine_similarity(fea, seen_proto_aligned)
             logits_des = self._cosine_similarity(fea, rep_des_aligned)
             logits_rrf = logits + logits_des
 
-            # by logits
             label = label.cpu()
             cur_index = torch.argmax(logits.cpu(), dim=1)
             pred = torch.tensor([seen_relid[int(i)] for i in cur_index])
-            correct = torch.eq(pred, label).sum().item()
-            corrects += correct
-            
-            # by logits_des
+            corrects += torch.eq(pred, label).sum().item()
+
             cur_index1 = torch.argmax(logits_des.cpu(),dim=1)
             pred1 = torch.tensor([seen_relid[int(i)] for i in cur_index1])
-            correct1 = torch.eq(pred1, label).sum().item()
-            corrects1 += correct1
+            corrects1 += torch.eq(pred1, label).sum().item()
 
-            # by rrf
             cur_index2 = torch.argmax(logits_rrf.cpu(),dim=1)
             pred2 = torch.tensor([seen_relid[int(i)] for i in cur_index2])
-            correct2 = torch.eq(pred2, label).sum().item()
-            corrects2 += correct2
-            
-            total += label.size(0) # Sử dụng kích thước thực tế của batch
-            acc, acc1, acc2 = correct / label.size(0), correct1 / label.size(0), correct2 / label.size(0)
-            
+            corrects2 += torch.eq(pred2, label).sum().item()
+
+            total += label.size(0)
+            acc = corrects / total if total > 0 else 0
+            acc1 = corrects1 / total if total > 0 else 0
+            acc2 = corrects2 / total if total > 0 else 0
+
             sys.stdout.write(f'[EVAL RRF] batch: {batch_num:4} | acc: {100*acc2:3.2f}%, total acc: {100*(corrects2/total):3.2f}%   ' + '\r')
             sys.stdout.flush()
         print('')
@@ -291,10 +265,10 @@ class Manager(object):
         self.id2rel = sampler.id2rel
         self.rel2id = sampler.rel2id
         self.r2desc = self._read_description(self.config.relation_description)
-        
+
         if self.config.model == 'qwen':
             print(f"Đang tải tokenizer cho: {self.config.model_name}")
-            self.tokenizer = AutoTokenizer.from_pretrained(self.config.model_name, trust_remote_code=True, torch_dtype=torch.bfloat16) # Thêm torch_dtype
+            self.tokenizer = AutoTokenizer.from_pretrained(self.config.model_name, trust_remote_code=True, torch_dtype=torch.bfloat16)
             if self.tokenizer.pad_token is None:
                 self.tokenizer.pad_token = self.tokenizer.eos_token
         else:
@@ -303,7 +277,7 @@ class Manager(object):
             self.tokenizer = BertTokenizer.from_pretrained(self.config.bert_path)
 
         encoder = EncodingModel(self.config)
-        encoder.to(self.config.device) # Đảm bảo model ở trên đúng device
+        encoder.to(self.config.device)
 
         cur_acc, total_acc = [], []
         cur_acc1, total_acc1 = [], []
@@ -311,10 +285,10 @@ class Manager(object):
         cur_acc_num, total_acc_num = [], []
         cur_acc_num1, total_acc_num1 = [], []
         cur_acc_num2, total_acc_num2 = [], []
-        
+
         memory_samples = {}
         seen_des = {}
-        
+
         for step, (training_data, valid_data, test_data, current_relations, \
             historic_test_data, seen_relations, seen_descriptions) in enumerate(sampler):
 
@@ -328,12 +302,11 @@ class Manager(object):
                         max_length=self.config.max_length,
                         return_tensors='pt'
                     )
-                    
                     seen_des[rel] = {
                         'ids': tokenized_output['input_ids'].squeeze().tolist(),
                         'mask': tokenized_output['attention_mask'].squeeze().tolist()
                     }
-            
+
             seen_relid = [self.rel2id[rel] for rel in seen_relations]
             seen_des_by_id = {self.rel2id[rel]: seen_des[rel] for rel in seen_relations}
             list_seen_des = [seen_des_by_id[rel_id] for rel_id in seen_relid]
@@ -343,27 +316,27 @@ class Manager(object):
 
             for rel in current_relations:
                 memory_samples[rel], _ = self.select_memory(encoder, training_data[rel])
-            
+
             if step > 0:
                 relations = list(set(seen_relations) - set(current_relations))
                 for rel in relations:
-                    training_data_initialize += memory_samples[rel]            
+                    training_data_initialize += memory_samples[rel]
             for rel in current_relations:
                 training_data_initialize += training_data[rel]
-                
+
             self.moment.init_moment(encoder, training_data_initialize, is_memory=False)
+            # SỬA LỖI: Gọi train_model mà không cần truyền `args` vì nó đã là thuộc tính của class
             self.train_model(encoder, training_data_initialize, seen_des, seen_relations, list_seen_des, is_memory=False)
-            
-            seen_proto = []  
+
+            seen_proto = []
             for rel in seen_relations:
                 proto, _ = self.get_memory_proto(encoder, memory_samples[rel])
                 seen_proto.append(proto)
-            # seen_proto được tạo ra trên CPU với kiểu float32
             seen_proto = torch.stack(seen_proto, dim=0)
 
             test_data_initialize_cur = [item for rel in current_relations for item in test_data[rel]]
             test_data_initialize_seen = [item for rel in seen_relations for item in historic_test_data[rel]]
-            
+
             with torch.no_grad():
                 encoder.eval()
                 rep_des_tensors = []
@@ -374,14 +347,12 @@ class Manager(object):
                     }
                     hidden = encoder(sample, is_des=True)
                     rep_des_tensors.append(hidden)
-                # rep_des được tạo ra trên GPU với kiểu bfloat16
                 rep_des = torch.cat(rep_des_tensors, dim=0)
             encoder.train()
-            
-            # Khi gọi hàm eval, các tensor sẽ được điều chỉnh device và dtype bên trong
+
             ac1, ac1_des, ac1_rrf = self.eval_encoder_proto_des(encoder,seen_proto,seen_relid,test_data_initialize_cur,rep_des)
             ac2, ac2_des, ac2_rrf = self.eval_encoder_proto_des(encoder,seen_proto,seen_relid,test_data_initialize_seen, rep_des)
-            
+
             cur_acc_num.append(ac1)
             total_acc_num.append(ac2)
             cur_acc.append(f'{ac1:.4f}')
@@ -402,7 +373,7 @@ class Manager(object):
             total_acc2.append(f'{ac2_rrf:.4f}')
             print('cur_acc rrf: ', cur_acc2)
             print('his_acc rrf: ', total_acc2)
-            
+
         torch.cuda.empty_cache()
         return total_acc_num, total_acc_num1, total_acc_num2
 
@@ -419,11 +390,11 @@ if __name__ == '__main__':
     parser.add_argument("--temperature", default=0.01, type=float)
     parser.add_argument("--distance_threshold", default=0.1, type=float)
     parser.add_argument("--top_k", default=10, type=int)
-    
+
     args = parser.parse_args()
-    
+
     config = Config('config.ini')
-    
+
     for key, value in vars(args).items():
         if value is not None:
              setattr(config, key, value)
@@ -432,11 +403,12 @@ if __name__ == '__main__':
     config.device = torch.device(config.device if torch.cuda.is_available() else "cpu")
     print(config.device)
 
-    # In ra giá trị task_name để gỡ lỗi
     print(f"DEBUG: Giá trị của config.task_name là: '{config.task_name}' (Loại: {type(config.task_name)})")
-    
-    # So sánh và gán đường dẫn
-    if config.task_name == 'FewRel':
+
+    # SỬA LỖI: Sử dụng .strip() để loại bỏ khoảng trắng thừa có thể có từ file config
+    task_name_stripped = config.task_name.strip()
+    if task_name_stripped == 'FewRel':
+        print("INFO: Đang cấu hình đường dẫn cho tác vụ FewRel.")
         config.rel_index = './data/CFRLFewRel/rel_index.npy'
         config.relation_name = './data/CFRLFewRel/relation_name.txt'
         config.relation_description = './data/CFRLFewRel/relation_description.txt'
@@ -450,24 +422,14 @@ if __name__ == '__main__':
             config.training_data = './data/CFRLFewRel/CFRLdata_10_100_10_10/train_0.txt'
             config.valid_data = './data/CFRLFewRel/CFRLdata_10_100_10_10/valid_0.txt'
             config.test_data = './data/CFRLFewRel/CFRLdata_10_100_10_10/test_0.txt'
-    else:
+
+    elif task_name_stripped == 'Tacred':
+        print("INFO: Đang cấu hình đường dẫn cho tác vụ Tacred.")
         config.rel_index = './data/CFRLTacred/rel_index.npy'
         config.relation_name = './data/CFRLTacred/relation_name.txt'
         config.relation_description = './data/CFRLTacred/relation_description.txt'
-        if config.num_k == 5:
-            config.rel_cluster_label = './data/CFRLTacred/CFRLdata_6_100_5_5/rel_cluster_label_0.npy'
-            config.training_data = './data/CFRLTacred/CFRLdata_6_100_5_5/train_0.txt'
-            config.valid_data = './data/CFRLTacred/CFRLdata_6_100_5_5/valid_0.txt'
-            config.test_data = './data/CFRLTacred/CFRLdata_6_100_5_5/test_0.txt'
-        elif config.num_k == 10:
-            config.rel_cluster_label = './data/CFRLTacred/CFRLdata_6_100_5_10/rel_cluster_label_0.npy'
-            config.training_data = './data/CFRLTacred/CFRLdata_6_100_5_10/train_0.txt'
-            config.valid_data = './data/CFRLTacred/CFRLdata_6_100_5_10/valid_0.txt'
-            config.test_data = './data/CFRLTacred/CFRLdata_6_100_5_10/test_0.txt'        
-
-    # else:
-    #     # Báo lỗi nếu task_name không hợp lệ
-    #     raise ValueError(f"Giá trị của 'task_name' là '{config.task_name}' không được hỗ trợ. Vui lòng kiểm tra file config.ini hoặc tham số dòng lệnh.")
+    else:
+        raise ValueError(f"Giá trị của 'task_name' là '{config.task_name}' không được hỗ trợ. Vui lòng kiểm tra file config.ini hoặc tham số dòng lệnh.")
 
     if config.model == 'qwen':
         print(f'Encoding model: {config.model_name}')
@@ -477,10 +439,10 @@ if __name__ == '__main__':
     print(f'pattern={config.pattern}')
     print('#############params############')
 
-    random.seed(config.seed) 
+    random.seed(config.seed)
     np.random.seed(config.seed)
     torch.manual_seed(config.seed)
-    torch.cuda.manual_seed_all(config.seed)   
+    torch.cuda.manual_seed_all(config.seed)
     base_seed = config.seed
 
     acc_list, acc_list1, aac_list2 = [], [], []
@@ -488,13 +450,14 @@ if __name__ == '__main__':
         config.seed = base_seed + i * 100
         print('--------Round ', i)
         print('seed: ', config.seed)
-        manager = Manager(config)
+        # SỬA LỖI: Truyền `args` vào constructor của Manager
+        manager = Manager(config, args)
         acc, acc1, aac2 = manager.train()
         acc_list.append(acc)
         acc_list1.append(acc1)
         aac_list2.append(aac2)
         torch.cuda.empty_cache()
-    
+
     accs = np.array(acc_list)
     ave = np.mean(accs, axis=0)
     print('----------END')
