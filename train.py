@@ -473,9 +473,9 @@ if __name__ == '__main__':
             config.valid_data = './data/CFRLTacred/CFRLdata_6_100_5_10/valid_0.txt'
             config.test_data = './data/CFRLTacred/CFRLdata_6_100_5_10/test_0.txt'        
 
-    else:
-        # Báo lỗi nếu task_name không hợp lệ
-        raise ValueError(f"Giá trị của 'task_name' là '{config.task_name}' không được hỗ trợ. Vui lòng kiểm tra file config.ini hoặc tham số dòng lệnh.")
+    # else:
+    #     # Báo lỗi nếu task_name không hợp lệ
+    #     raise ValueError(f"Giá trị của 'task_name' là '{config.task_name}' không được hỗ trợ. Vui lòng kiểm tra file config.ini hoặc tham số dòng lệnh.")
 
     if config.model == 'qwen':
         print(f'Encoding model: {config.model_name}')
