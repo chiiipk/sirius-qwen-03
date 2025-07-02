@@ -41,7 +41,6 @@ class Manager(object):
         return dist
 
     def _cosine_similarity(self, x1, x2):
-        # SỬA LỖI: Chuyển x2 sang cùng dtype và device với x1 trước khi tính toán
         x2_aligned = x2.to(device=x1.device, dtype=x1.dtype)
         x1_norm = F.normalize(x1, p=2, dim=1)
         x2_norm = F.normalize(x2_aligned, p=2, dim=1)
@@ -108,7 +107,6 @@ class Manager(object):
 
 
     def get_cluster_and_centroids(self, embeddings):
-        # Chuyển embeddings về float32 trên CPU để tương thích với scikit-learn
         embeddings_np = embeddings.cpu().float().numpy()
         clustering_model = AgglomerativeClustering(n_clusters=None, metric="cosine", linkage="average", distance_threshold=args.distance_threshold)
         clusters = clustering_model.fit_predict(embeddings_np)
@@ -226,9 +224,7 @@ class Manager(object):
                 sys.stdout.flush() 
         print('')
 
-    # ################################################################################# #
-    # #############################   ĐOẠN CODE ĐÃ SỬA   ############################# #
-    # ################################################################################# #
+    
     def eval_encoder_proto_des(self, encoder, seen_proto, seen_relid, test_data, rep_des):
         batch_size = 16
         test_loader = get_data_loader(self.config, test_data, False, False, batch_size)
@@ -240,10 +236,8 @@ class Manager(object):
             with torch.no_grad():
                 hidden = encoder(instance)
             
-            # `hidden` có thể là bfloat16 trên GPU.
-            # `seen_proto` và `rep_des` cần được chuyển sang cùng device và dtype với `hidden`.
+          
             
-            # Đảm bảo các tensor prototypes và descriptions ở đúng device và có cùng dtype với hidden
             device = hidden.device
             dtype = hidden.dtype
             
@@ -253,13 +247,11 @@ class Manager(object):
             # `fea` bây giờ sẽ là `hidden` trực tiếp, không cần di chuyển qua CPU
             fea = hidden
             
-            # SỬA LỖI: Chuyển đổi dtype của `seen_proto` và `rep_des` để khớp với `fea`
             logits = self._cosine_similarity(fea, seen_proto_aligned)
             logits_des = self._cosine_similarity(fea, rep_des_aligned)
             logits_rrf = logits + logits_des
 
             # by logits
-            # Di chuyển label về CPU để so sánh với pred
             label = label.cpu()
             cur_index = torch.argmax(logits.cpu(), dim=1)
             pred = torch.tensor([seen_relid[int(i)] for i in cur_index])
